@@ -1,90 +1,106 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  OnModuleInit,
-} from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { Prisma, PrismaClient } from '../../generated/prisma/client';
-import { PaginationDto } from 'src/common';
+import {
+  ENTITY_NAMES,
+  handlePrismaError,
+  PaginationDto,
+  PrismaService,
+} from 'src/common';
+import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
-export default class ProductsService
-  extends PrismaClient
-  implements OnModuleInit
-{
-  private readonly logger = new Logger(ProductsService.name);
+export default class ProductsService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async onModuleInit() {
-    await this.$connect();
-    this.logger.log('Prisma Client connected successfully');
-  }
-
-  create(createProductDto: CreateProductDto) {
-    return this.product.create({
-      data: createProductDto,
-    });
+  async create(createProductDto: CreateProductDto) {
+    try {
+      return await this.prisma.product.create({
+        data: createProductDto,
+      });
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      handlePrismaError(error, `${this.constructor.name}::create`);
+    }
   }
 
   async findAll(paginationDto: PaginationDto) {
     const { limit = 10, page = 1 } = paginationDto;
 
-    const totalItems = await this.product.count({ where: { available: true } });
-    const lastPage = Math.ceil(totalItems / limit);
+    try {
+      const totalItems = await this.prisma.product.count({
+        where: { available: true },
+      });
 
-    return {
-      data: await this.product.findMany({
+      const lastPage = Math.ceil(totalItems / limit);
+
+      const data = await this.prisma.product.findMany({
         take: limit,
         skip: (page - 1) * limit,
         where: { available: true },
-      }),
-      meta: {
-        totalItems,
-        currentPage: page,
-        perPage: limit,
-        totalPages: lastPage,
-        nextPage: page < lastPage ? page + 1 : null,
-        previousPage: page > 1 ? page - 1 : null,
-      },
-    };
+      });
+
+      return {
+        data,
+        meta: {
+          totalItems,
+          currentPage: page,
+          perPage: limit,
+          totalPages: lastPage,
+          nextPage: page < lastPage ? page + 1 : null,
+          previousPage: page > 1 ? page - 1 : null,
+        },
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      handlePrismaError(error, `${this.constructor.name}::findAll`);
+    }
   }
 
   async findOne(id: number) {
-    const product = await this.product.findUnique({
-      where: { id, available: true },
-    });
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id, available: true },
+      });
 
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
+      if (!product) {
+        throw new RpcException({
+          message: `Product with ID ${id} not found`,
+          status: HttpStatus.BAD_REQUEST,
+        });
+      }
+
+      return product;
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      handlePrismaError(error, `${this.constructor.name}::findOne`, {
+        id,
+        entity: ENTITY_NAMES.PRODUCT,
+      });
     }
-
-    return product;
   }
 
   async update(id: number, updateProductDto: UpdateProductDto) {
     const { id: _, ...data } = updateProductDto;
+
     try {
-      return await this.product.update({
-        where: { id },
-        data: data,
+      return await this.prisma.product.update({
+        where: { id, available: true },
+        data,
       });
     } catch (error) {
-      // En Prisma, este es el error cuando no se encuentra el registro
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2025'
-      ) {
-        throw new NotFoundException(`Product with ID ${id} not found`);
-      }
-      throw error;
+      if (error instanceof RpcException) throw error;
+      handlePrismaError(error, `${this.constructor.name}::update`, {
+        id,
+        entity: ENTITY_NAMES.PRODUCT,
+      });
     }
   }
 
   async remove(id: number) {
     await this.findOne(id);
 
-    return this.product.update({
+    return this.prisma.product.update({
       where: { id },
       data: {
         available: false,
