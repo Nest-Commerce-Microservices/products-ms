@@ -33,9 +33,6 @@ export function handlePrismaError(
     const mapped = PRISMA_ERROR_MAP.get(error.code);
     if (mapped) {
       const interpolatedMessage = interpolate(mapped.message, variables);
-      logger.error(
-        `[${finalContext}] PrismaError ${error.code}: ${interpolatedMessage}`,
-      );
       throw new RpcException({
         status: mapped.status,
         message: interpolatedMessage,
