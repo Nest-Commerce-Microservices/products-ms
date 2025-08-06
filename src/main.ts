@@ -14,7 +14,7 @@ async function bootstrap() {
       },
     },
   );
-  const logger = new Logger('Bootstrap');
+  const logger = new Logger('PRODUCTS-MICROSERVICE');
 
   app.useGlobalPipes(
     new ValidationPipe({

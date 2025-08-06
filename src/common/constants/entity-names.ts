@@ -1,5 +1,5 @@
 export const ENTITY_NAMES = {
-  PRODUCT: 'Producto',
+  PRODUCT: 'Product',
   //   CATEGORY: 'Categoría',
   //   BRAND: 'Marca',
   // ...
