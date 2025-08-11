@@ -1,0 +1,9 @@
+dist/
+node_modules/
+/build
+.env
+*.sublime-workspace
+*.log
+
+#Prisma
+/generated/prisma

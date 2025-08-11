@@ -4,6 +4,7 @@ import * as Joi from 'joi';
 export interface envConfig {
   PORT: number;
   DATABASE_URL: string;
+  NATS_SERVERS: string[];
   // otros campos aquí...
 }
 
@@ -11,15 +12,23 @@ export interface envConfig {
 const envSchema = Joi.object({
   PORT: Joi.number().port().required(),
   DATABASE_URL: Joi.string().required(),
+  NATS_SERVERS: Joi.array().items(Joi.string().required()),
+
   // otros...
 }).unknown(true);
 
 // 3. Validación
-const validated = envSchema.validate(process.env, {
-  abortEarly: false,
-  allowUnknown: true,
-  stripUnknown: true,
-});
+const validated = envSchema.validate(
+  {
+    ...process.env,
+    NATS_SERVERS: process.env.NATS_SERVERS?.split(','),
+  },
+  {
+    abortEarly: false,
+    allowUnknown: true,
+    stripUnknown: true,
+  },
+);
 
 if (validated.error) {
   throw new Error(
@@ -34,5 +43,6 @@ const value = validated.value as Record<string, unknown>;
 export const envs: envConfig = {
   PORT: Number(value.PORT),
   DATABASE_URL: String(value.DATABASE_URL),
+  NATS_SERVERS: value.NATS_SERVERS as string[],
   // otros campos, asegurando el tipo
 };

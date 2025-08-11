@@ -107,4 +107,31 @@ export default class ProductsService {
       },
     });
   }
+
+  async validateProduct(ids: number[]) {
+    ids = Array.from(new Set(ids)); // Remove duplicates
+
+    try {
+      const products = await this.prisma.product.findMany({
+        where: {
+          id: { in: ids },
+        },
+      });
+
+      if (products.length !== ids.length) {
+        throw new RpcException({
+          message: 'Some products were not found',
+          status: HttpStatus.BAD_REQUEST,
+        });
+      }
+
+      return products;
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      handlePrismaError(error, `${this.constructor.name}::validateProduct`, {
+        ids,
+        entity: ENTITY_NAMES.PRODUCT,
+      });
+    }
+  }
 }
