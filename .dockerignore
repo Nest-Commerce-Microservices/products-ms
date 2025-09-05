@@ -5,5 +5,3 @@ node_modules/
 *.sublime-workspace
 *.log
 
-#Prisma
-/generated/prisma

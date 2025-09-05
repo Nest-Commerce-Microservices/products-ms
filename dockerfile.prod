@@ -1,0 +1,77 @@
+# syntax=docker/dockerfile:1.6
+# Multi-stage moderno. Doc: https://docs.docker.com/build/building/multi-stage/
+
+##############################
+# 1) Base: Node + pnpm (Corepack)
+##############################
+FROM node:22-alpine3.21 AS base
+WORKDIR /app
+# Corepack gestiona pnpm y fija versión (evita npm -g pnpm)
+# Corepack: https://nodejs.org/api/corepack.html
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+##############################
+# 2) Deps: instala TODAS las deps (incluye dev) para compilar
+##############################
+FROM base AS deps
+ENV NODE_ENV=development
+# Copia solo manifests para maximizar cache
+COPY package.json pnpm-lock.yaml ./
+# Si usas workspaces: COPY pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+# Doc: https://pnpm.io/cli/install
+
+##############################
+# 3) Build: compila, genera Prisma, y poda devDeps
+##############################
+FROM base AS build
+ENV NODE_ENV=development
+
+# node_modules con devDeps resueltas
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copia primero prisma para cachear el generate cuando solo cambie el schema
+COPY prisma ./prisma
+# Luego el resto del código (src, tsconfig, nest-cli.json, etc.)
+COPY . .
+
+# Compila (Nest CLI en devDependencies)
+# Nest CLI: https://docs.nestjs.com/cli/overview
+RUN pnpm run build
+
+# Genera Prisma Client ANTES de podar devDeps (usa la CLI local)
+# Prisma generate: https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/generating-prisma-client
+RUN pnpm prisma generate
+# Alternativa con versión fija (sin depender de devDep local):
+# RUN pnpm dlx prisma@5.19.1 generate
+
+# Quita devDependencies (solo producción)
+# pnpm prune: https://pnpm.io/cli/prune
+RUN pnpm prune --prod
+
+# Limpia la store de pnpm en esta etapa (no se copia a runtime)
+# pnpm store: https://pnpm.io/cli/store
+RUN pnpm store prune || true
+
+##############################
+# 4) Runtime: mínimo para producción
+##############################
+FROM node:22-alpine3.21 AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apk add --no-cache openssl libstdc++
+
+# Usuario no-root por seguridad
+# Imagen oficial Node: https://hub.docker.com/_/node
+USER node
+
+# Copia lo necesario para ejecutar
+COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=node:node --from=build /app/node_modules ./node_modules
+COPY --chown=node:node --from=build /app/generated ./generated
+COPY --chown=node:node --from=build /app/prisma ./prisma
+COPY --chown=node:node package.json ./
+
+EXPOSE 3000
+CMD ["sh","-lc","npx -y prisma@5.19.1 migrate deploy && node dist/main.js"]
